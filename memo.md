@@ -63,7 +63,7 @@ Content-Type: application/x-www-form-urlencoded
 
 code=4/0AanRRrvi_umBD4TsbKWrI9u4sWX1fpd3b5ScGS8WNFIGW4g7ESGHbFu2-oyOysmC98y-FA
 &client_id=xxx.apps.googleusercontent.com
-&client_secret=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
+&client_secret=
 &grant_type=authorization_code
 &redirect_uri=http://localhost/callback
 ```
@@ -124,10 +124,102 @@ code=4/0AanRRrvi_umBD4TsbKWrI9u4sWX1fpd3b5ScGS8WNFIGW4g7ESGHbFu2-oyOysmC98y-FA
 - 有効期限の管理
 - 必要に応じて更新
 
-# 用語集
+## 認可グラントタイプの種類と特徴
 
-## スコープ
+### 1. 認可コードグラント
 
-クライアントが認可サーバーに要求するアクセストークンの権限範囲を通知するもの。
+最も一般的で安全な認可フロー。主にサーバーサイドアプリケーション（コンフィデンシャルクライアント）で使用されます。
 
-## 認可コード
+**特徴**
+
+- アクセストークンとリフレッシュトークンの両方を取得可能
+- フロントエンドには認可コードのみを渡し、アクセストークンはサーバーサイドで管理
+- 認可コードは一時的なものであり、不正利用された場合のリスクを最小限に抑制
+
+### 2. インプリシットグラント
+
+フロントエンドアプリケーション（パブリッククライアント）向けに設計されたフロー。ただし、セキュリティリスクが高いため現在は非推奨です。
+
+**特徴**
+
+- 認可コードを使用せず、直接アクセストークンを取得
+- リダイレクト URL にアクセストークンが露出
+- リフレッシュトークンは取得不可
+
+#### インプリシットグラントの実装例
+
+1. **認可リクエスト**
+
+```http
+GET https://accounts.google.com/o/oauth2/auth
+    ?response_type=token
+    &client_id=xxx.apps.googleusercontent.com
+    &state=abcd
+    &scope=https://www.googleapis.com/auth/calendar.events
+    &redirect_uri=http://localhost/callback
+```
+
+2. **認可レスポンス**
+
+```http
+GET http://localhost/callback
+    #access_token=ya29.a0ARW5m75tvsHFVGFS4...
+    &token_type=Bearer
+    &expires_in=3599
+    &scope=https://www.googleapis.com/auth/calendar.events
+```
+
+## パブリッククライアントの推奨実装：PKCE
+
+インプリシットグラントに代わる安全な方法として、PKCE を使用した認可コードグラントが推奨されています。
+
+### PKCE の仕組み
+
+PKCE は、認可リクエストとトークン取得リクエストの関連性を証明する仕組みを提供します。
+
+**主要な要素**
+
+1. `code_verifier`：クライアントが生成するランダムな文字列
+2. `code_challenge`：code_verifier から生成された検証用の値
+3. `code_challenge_method`：変換方法の指定（plain or S256）
+
+### 実装手順
+
+1. **認可リクエスト時**
+
+   - 通常の認可コードグラントのパラメータに加えて
+   - `code_challenge`と`code_challenge_method`を追加
+
+2. **トークン取得時**
+   - 通常の認可コードグラントのパラメータに加えて
+   - `code_verifier`を追加
+
+この方法により、パブリッククライアントでも安全に認可コードグラントを利用できます。
+
+// 認可リクエスト
+https://accounts.google.com/o/oauth2/auth?response_type=code&client_id=.apps.googleusercontent.com&state=abcd&scope=https://www.googleapis.com/auth/calendar.events&redirect_uri=http://localhost/callback&access_type=offline
+
+// 認可レスポンス
+http://localhost/callback?state=abcd&code=4%2F0AanRRrtCgvq43QVBSjg1CMxpV7YXJ6P3q6JPHyWj9mfKh9QGifXvkvIiEINWP7gwqQujCA&scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcalendar.events
+
+// アクセストークン取得リクエスト
+// リフレッシュトークンが欲しい
+https://oauth2.googleapis.com/token?code=4%2F0AanRRrtCgvq43QVBSjg1CMxpV7YXJ6P3q6JPHyWj9mfKh9QGifXvkvIiEINWP7gwqQujCA&client_id=.apps.googleusercontent.com&client_secret=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&grant_type=authorization_code&redirect_uri=http://localhost/callback
+
+// アクセストークン取得レスポンス
+{
+"access_token": "ya29.a0ARW5m75dv1bVwOPb5CZJ9cc4_GSPY3STbN4vdJqdq1Iy68Y9yxlrJtvDQgYj0JyudgVd3CjGglApex5-7Fw16oJZR0goNQ_08IP8Pbmo0n9yd88jCSSU0wsm6BHk6CVjQvyaOAz1iS5ZOBR7VLf16LZ4-18kMLSBbL4aCgYKAWwSARMSFQHGX2Mi9SbMX_JjL2cKfbF6Pi7rAA0170",
+"expires_in": 3560,
+"scope": "https://www.googleapis.com/auth/calendar.events",
+"token_type": "Bearer"
+}
+
+OpenID Connect とは、OAuth 2.0 の拡張使用であり、認証を目的としたプロトコルである。
+
+OpenID Connect の各種フローについて学習していましたが、
+その中で紹介された ハイブリットフローの存在意義がよく分からず 🤔
+
+そもそも、認可コードフローは、フロントエンドに id_token を露出して漏洩するリスクを避けるためのものなのに、ハイブリットフローとして認可コードフローと併せてわざわざフロントエンドに id_token を露出するインプリシットフローを行う必要があるのか？というところ。
+
+現場でハイブリットフローを使用する例はあるのかな？
+あるとしたら、どんな利点があるのかな？
